@@ -13,6 +13,28 @@ from routes import auth, kyc, documents, face, video
 async def lifespan(app: FastAPI):
     # Startup
     await init_db()
+    
+    # Auto-create admin if no admin exists
+    try:
+        from database.models import User
+        from sqlalchemy import select
+        from sqlalchemy.sql import func
+        
+        from database.database import async_session_maker
+        
+        async with async_session_maker() as db:
+            result = await db.execute(select(func.count()).select_from(User).where(User.is_admin == True))
+            admin_count = result.scalar()
+            
+            if admin_count == 0:
+                print("No admin found. Creating default admin...")
+                from create_admin import create_admin
+                await create_admin("admin@gmail.com", "Admin123", "System Admin")
+            else:
+                print(f"Admin(s) already exist ({admin_count}). Skipping auto-creation.")
+    except Exception as e:
+        print(f"Admin check/creation skipped: {e}")
+        
     print(f"🚀 {settings.APP_NAME} v{settings.APP_VERSION} started")
     yield
     # Shutdown
