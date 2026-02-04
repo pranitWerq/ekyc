@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="eKYC Platform - Electronic Know Your Customer Verification System">
+    <title>eKYC Platform - Identity Verification</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/livekit-client@2.9.0/dist/livekit-client.umd.min.js"
+        crossorigin="anonymous"></script>
+</head>
+
+<body>
+    <div class="app-container" id="app">
+        <!-- Auth View -->
+        <div id="auth-view" class="auth-page">
+            <div class="auth-card card">
+                <div class="auth-logo">
+                    <div class="logo">
+                        <div class="logo-icon">🔐</div>
+                        <span>eKYC Platform</span>
+                    </div>
+                </div>
+
+                <!-- Login Form -->
+                <div id="login-form">
+                    <h3 class="text-center mb-3">Welcome Back</h3>
+                    <form onsubmit="handleLogin(event)">
+                        <div class="form-group">
+                            <label class="form-label">Email</label>
+                            <input type="email" id="login-email" class="form-input" placeholder="Enter your email"
+                                required>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Password</label>
+                            <input type="password" id="login-password" class="form-input"
+                                placeholder="Enter your password" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary w-full btn-lg">Sign In</button>
+                    </form>
+                    <p class="text-center mt-3 text-muted">
+                        Don't have an account? <a href="#" onclick="showRegister()" class="text-primary">Register</a>
+                    </p>
+                </div>
+
+                <!-- Register Form -->
+                <div id="register-form" class="hidden">
+                    <h3 class="text-center mb-3">Create Account</h3>
+                    <form onsubmit="handleRegister(event)">
+                        <div class="form-group">
+                            <label class="form-label">Full Name</label>
+                            <input type="text" id="register-name" class="form-input" placeholder="Enter your full name"
+                                required>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Email</label>
+                            <input type="email" id="register-email" class="form-input" placeholder="Enter your email"
+                                required>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Password</label>
+                            <input type="password" id="register-password" class="form-input"
+                                placeholder="Create a password" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary w-full btn-lg">Create Account</button>
+                    </form>
+                    <p class="text-center mt-3 text-muted">
+                        Already have an account? <a href="#" onclick="showLogin()" class="text-primary">Sign In</a>
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Dashboard -->
+        <div id="dashboard-view" class="hidden">
+            <!-- Header -->
+            <header class="header">
+                <div class="container header-content">
+                    <div class="logo">
+                        <div class="logo-icon">🔐</div>
+                        <span>eKYC Platform</span>
+                    </div>
+                    <nav>
+                        <ul class="nav-links">
+                            <li id="verification-nav"><a href="#" class="active"
+                                    data-section="verification">Verification</a></li>
+                            <li id="status-nav"><a href="#" data-section="status">Status</a></li>
+                            <li id="admin-nav" class="hidden"><a href="#" data-section="admin">Admin Panel</a></li>
+                        </ul>
+                    </nav>
+                    <div class="user-section">
+                        <span id="user-name" class="text-secondary"></span>
+                        <div class="user-avatar" id="user-avatar" onclick="handleLogout()">U</div>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Main Content -->
+            <main class="main-content">
+                <div class="container">
+                    <!-- Verification Section -->
+                    <section id="verification-section">
+                        <!-- Progress Stepper -->
+                        <div class="stepper">
+                            <div class="step active" data-step="1">
+                                <div class="step-number">1</div>
+                                <span class="step-title">Document</span>
+                            </div>
+                            <div class="step-connector"></div>
+                            <div class="step" data-step="2">
+                                <div class="step-number">2</div>
+                                <span class="step-title">Face Match</span>
+                            </div>
+                            <div class="step-connector"></div>
+                            <div class="step" data-step="3">
+                                <div class="step-number">3</div>
+                                <span class="step-title">Liveness</span>
+                            </div>
+                            <div class="step-connector"></div>
+                            <div class="step" data-step="4">
+                                <div class="step-number">4</div>
+                                <span class="step-title">Video Call</span>
+                            </div>
+                        </div>
+
+                        <!-- Step 1: Document Upload -->
+                        <div id="step-1" class="step-content">
+                            <div class="grid-2">
+                                <div class="card">
+                                    <div class="card-header">
+                                        <h3 class="card-title">
+                                            <span class="card-icon primary">📄</span>
+                                            Upload Identity Document
+                                        </h3>
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="form-label">Document Type</label>
+                                        <select id="document-type" class="form-input form-select">
+                                            <option value="passport">Passport</option>
+                                            <option value="drivers_license">Driver's License</option>
+                                            <option value="national_id">National ID Card</option>
+                                            <option value="other">Other</option>
+                                        </select>
+                                    </div>
+                                    <div class="upload-zone" id="document-upload-zone"
+                                        onclick="document.getElementById('document-input').click()">
+                                        <div class="upload-icon">📷</div>
+                                        <div class="upload-text">Click to upload or drag and drop</div>
+                                        <div class="upload-hint">PNG, JPG up to 10MB</div>
+                                        <input type="file" id="document-input" accept="image/*" class="hidden"
+                                            onchange="handleDocumentUpload(event)">
+                                    </div>
+                                    <div id="document-preview" class="mt-3 hidden">
+                                        <img id="document-image"
+                                            style="max-width: 100%; border-radius: var(--radius-md);">
+                                    </div>
+                                </div>
+                                <div class="card">
+                                    <div class="card-header">
+                                        <h3 class="card-title">
+                                            <span class="card-icon success">✓</span>
+                                            Extracted Information
+                                        </h3>
+                                    </div>
+                                    <div id="extracted-data">
+                                        <p class="text-muted text-center">Upload a document to extract information</p>
+                                    </div>
+                                    <button id="next-to-face" class="btn btn-primary w-full mt-3" disabled
+                                        onclick="goToStep(2)">
+                                        Continue to Face Verification →
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Step 2: Face Verification -->
+                        <div id="step-2" class="step-content hidden">
+                            <div class="grid-2">
+                                <div class="card">
+                                    <div class="card-header">
+                                        <h3 class="card-title">
+                                            <span class="card-icon primary">🤳</span>
+                                            Take a Selfie
+                                        </h3>
+                                    </div>
+                                    <div class="camera-container" id="selfie-camera-container">
+                                        <video id="selfie-video" class="camera-video" autoplay playsinline></video>
+                                        <div class="face-guide"></div>
+                                        <div class="camera-controls">
+                                            <button class="capture-btn" onclick="captureSelfie()"></button>
+                                        </div>
+                                    </div>
+                                    <canvas id="selfie-canvas" class="hidden"></canvas>
+                                    <div id="selfie-preview" class="mt-2 hidden">
+                                        <img id="selfie-image"
+                                            style="max-width: 100%; border-radius: var(--radius-md);">
+                                    </div>
+                                </div>
+                                <div class="card">
+                                    <div class="card-header">
+                                        <h3 class="card-title">
+                                            <span class="card-icon success">📊</span>
+                                            Verification Result
+                                        </h3>
+                                    </div>
+                                    <div id="face-result">
+                                        <p class="text-muted text-center">Position your face in the circle and capture
+                                        </p>
+                                    </div>
+                                    <div class="flex gap-2 mt-3">
+                                        <button class="btn btn-secondary" onclick="goToStep(1)">← Back</button>
+                                        <button id="next-to-liveness" class="btn btn-primary flex-1" disabled
+                                            onclick="goToStep(3)">
+                                            Continue to Liveness Check →
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Step 3: Liveness Detection -->
+                        <div id="step-3" class="step-content hidden">
+                            <div class="grid-2">
+                                <div class="card">
+                                    <div class="card-header">
+                                        <h3 class="card-title">
+                                            <span class="card-icon warning">👁️</span>
+                                            Liveness Check
+                                        </h3>
+                                    </div>
+                                    <div class="camera-container">
+                                        <video id="liveness-video" class="camera-video" autoplay playsinline></video>
+                                    </div>
+                                    <canvas id="liveness-canvas" class="hidden"></canvas>
+                                    <div class="liveness-actions">
+                                        <div class="liveness-action" id="blink-action" data-action="blink">
+                                            <div class="liveness-action-icon">😉</div>
+                                            <div class="liveness-action-text">Blink Eyes</div>
+                                        </div>
+                                        <div class="liveness-action" id="smile-action" data-action="smile">
+                                            <div class="liveness-action-icon">😊</div>
+                                            <div class="liveness-action-text">Smile</div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="card">
+                                    <div class="card-header">
+                                        <h3 class="card-title">
+                                            <span class="card-icon success">✓</span>
+                                            Liveness Status
+                                        </h3>
+                                    </div>
+                                    <div id="liveness-result">
+                                        <div class="alert alert-info">
+                                            <span>📋</span>
+                                            <span>Complete each action when prompted. Click the action buttons to
+                                                verify.</span>
+                                        </div>
+                                    </div>
+                                    <div id="liveness-progress" class="mt-3">
+                                        <div class="flex justify-between mb-1">
+                                            <span>Progress</span>
+                                            <span id="liveness-progress-text">0/2</span>
+                                        </div>
+                                        <div
+                                            style="height: 8px; background: var(--bg-elevated); border-radius: 4px; overflow: hidden;">
+                                            <div id="liveness-progress-bar"
+                                                style="height: 100%; width: 0%; background: var(--primary); transition: width 0.3s;">
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="flex gap-2 mt-3">
+                                        <button class="btn btn-secondary" onclick="goToStep(2)">← Back</button>
+                                        <button id="next-to-video" class="btn btn-primary flex-1" disabled
+                                            onclick="goToStep(4)">
+                                            Continue to Video Call →
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Step 4: Video Verification -->
+                        <div id="step-4" class="step-content hidden">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h3 class="card-title">
+                                        <span class="card-icon primary">📹</span>
+                                        Video Verification Call
+                                    </h3>
+                                    <span class="badge badge-pending" id="video-status">Waiting for Agent</span>
+                                </div>
+                                <div class="video-grid">
+                                    <div class="video-tile">
+                                        <video id="local-video" autoplay playsinline muted></video>
+                                        <div class="video-tile-label">You</div>
+                                    </div>
+                                    <div class="video-tile">
+                                        <video id="remote-video" autoplay playsinline></video>
+                                        <div class="video-tile-label">Agent</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="video-controls">
+                                <button class="btn btn-secondary btn-icon" id="toggle-audio"
+                                    onclick="toggleAudio()">🎤</button>
+                                <button class="btn btn-secondary btn-icon" id="toggle-video-btn"
+                                    onclick="toggleVideo()">📹</button>
+                                <button class="btn btn-primary" id="join-room-btn" onclick="joinVideoRoom()">Join
+                                    Video Room</button>
+                                <button class="btn btn-error hidden" id="end-call-btn" onclick="endVideoCall()">End
+                                    Call</button>
+                                <button class="btn btn-secondary btn-icon hidden" id="agent-back-btn"
+                                    onclick="exitAgentCall()">Dashboard</button>
+                                <button class="btn btn-secondary btn-icon" onclick="goToStep(3)"
+                                    id="user-back-btn">←</button>
+                            </div>
+                            <div id="transcription-panel" class="transcript-container hidden">
+                                <div class="transcript-header">
+                                    <span>📝 Live Transcription (English)</span>
+                                    <button class="btn btn-sm btn-outline"
+                                        onclick="downloadTranscript()">Download</button>
+                                </div>
+                                <div id="transcript-content" class="transcript-content">
+                                    <div class="transcript-placeholder">Waiting for speech...</div>
+                                </div>
+                            </div>
+                            <div id="video-result" class="mt-3 hidden">
+                                <div class="alert alert-success">
+                                    <span>✅</span>
+                                    <span>Video verification completed! Your KYC session has been submitted for
+                                        review.</span>
+                                </div>
+                            </div>
+                        </div>
+                </div>
+                </section>
+
+                <!-- Status Section -->
+                <section id="status-section" class="hidden">
+                    <div class="card">
+                        <div class="card-header">
+                            <h3 class="card-title">
+                                <span class="card-icon primary">📋</span>
+                                Your KYC Status
+                            </h3>
+                        </div>
+                        <div id="kyc-status-content">
+                            <div class="loading-spinner"></div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Admin Section -->
+                <section id="admin-section" class="hidden">
+                    <div class="grid-4 mb-4">
+                        <div class="stat-card">
+                            <div class="stat-value" id="stat-pending">0</div>
+                            <div class="stat-label">Pending Reviews</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value" id="stat-approved">0</div>
+                            <div class="stat-label">Approved</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value" id="stat-rejected">0</div>
+                            <div class="stat-label">Rejected</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value" id="stat-total">0</div>
+                            <div class="stat-label">Total Sessions</div>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <div class="card-header">
+                            <h3 class="card-title">
+                                <span class="card-icon primary">👥</span>
+                                KYC Sessions
+                            </h3>
+                            <select class="form-input form-select" style="width: auto;"
+                                onchange="filterSessions(this.value)">
+                                <option value="">All Status</option>
+                                <option value="pending">Pending</option>
+                                <option value="document_uploaded">Document Uploaded</option>
+                                <option value="face_verified">Face Verified</option>
+                                <option value="liveness_passed">Liveness Passed</option>
+                                <option value="video_completed">Video Completed</option>
+                                <option value="approved">Approved</option>
+                                <option value="rejected">Rejected</option>
+                            </select>
+                        </div>
+                        <table class="admin-table">
+                            <thead>
+                                <tr>
+                                    <th>Session ID</th>
+                                    <th>User</th>
+                                    <th>Status</th>
+                                    <th>Created</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="sessions-table-body">
+                                <tr>
+                                    <td colspan="5" class="text-center text-muted">Loading...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+        </div>
+        </main>
+    </div>
+    </div>
+
+    <!-- Review Modal -->
+    <div class="modal-overlay" id="review-modal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>Review KYC Session</h3>
+                <button class="modal-close" onclick="closeModal()">✕</button>
+            </div>
+            <div id="review-content">
+                <!-- Dynamic content -->
+            </div>
+            <div class="flex gap-2 mt-3">
+                <button class="btn btn-success flex-1" onclick="approveSession()">✓ Approve</button>
+                <button class="btn btn-secondary flex-1" onclick="rejectSession()">✕ Reject</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+
+</html>

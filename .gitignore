@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+
+# Environment variables
+.env
+
+# Project specific uploads/data
+uploads/documents
+uploads/faces
+
+venv
+ekyc.db
+docker-compose.yml
+Dockerfile
+V-KYC_Live_Translation_Project_Plan.pdf
