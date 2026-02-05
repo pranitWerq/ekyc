@@ -145,10 +145,22 @@ async function loadUserAndDashboard() {
         // Create or get KYC session
         if (!currentUser.is_admin) {
             document.getElementById('admin-nav').classList.add('hidden');
-            document.getElementById('verification-nav').classList.remove('hidden');
-            document.getElementById('status-nav').classList.remove('hidden');
             await initKYCSession();
-            showSection('verification');
+
+            // Check if KYC is already completed or approved
+            if (currentSession && (currentSession.status === 'approved' || currentSession.status === 'video_completed')) {
+                document.getElementById('verification-nav').classList.add('hidden');
+                document.getElementById('status-nav').classList.remove('hidden');
+                showSection('status');
+                // Set active nav
+                document.querySelectorAll('.nav-links a').forEach(l => l.classList.remove('active'));
+                const statusLink = document.querySelector('[data-section="status"]');
+                if (statusLink) statusLink.classList.add('active');
+            } else {
+                document.getElementById('verification-nav').classList.remove('hidden');
+                document.getElementById('status-nav').classList.remove('hidden');
+                showSection('verification');
+            }
         } else {
             document.getElementById('admin-nav').classList.remove('hidden');
             document.getElementById('verification-nav').classList.add('hidden');
@@ -252,6 +264,12 @@ async function loadKYCStatus() {
                     <p><strong>Status:</strong> <span class="badge badge-${getStatusBadge(session.status)}">${session.status}</span></p>
                     <p><strong>Created:</strong> ${new Date(session.created_at).toLocaleString()}</p>
                     <p><strong>Updated:</strong> ${new Date(session.updated_at).toLocaleString()}</p>
+                    ${(session.status === 'approved' || session.status === 'video_completed') ? `
+                        <div class="alert alert-success mt-4">
+                            <span>✅</span>
+                            <span>Verification process completed</span>
+                        </div>
+                    ` : ''}
                 </div>
                 <div>
                     <h4 class="mb-2">Verification Progress</h4>

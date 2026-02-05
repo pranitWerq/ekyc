@@ -17,17 +17,19 @@ async def create_kyc_session(
     current_user: User = Depends(get_current_user)
 ):
     """Create a new KYC verification session"""
-    # Check if user already has a pending session
+    # Check if user already has any session
     result = await db.execute(
         select(KYCSession).where(
-            KYCSession.user_id == current_user.id,
-            KYCSession.status.notin_([KYCStatus.APPROVED, KYCStatus.REJECTED])
-        )
+            KYCSession.user_id == current_user.id
+        ).order_by(KYCSession.created_at.desc())
     )
-    existing = result.scalar_one_or_none()
-    if existing:
+    existing = result.scalars().first()
+    
+    # If user has an active, completed or approved session, return it
+    if existing and existing.status != KYCStatus.REJECTED:
         return existing
     
+    # Create new session if no session exists or previous was rejected
     session = KYCSession(user_id=current_user.id)
     db.add(session)
     await db.commit()
@@ -48,13 +50,10 @@ async def get_current_session(
             selectinload(KYCSession.liveness_check),
             selectinload(KYCSession.video_session)
         )
-        .where(
-            KYCSession.user_id == current_user.id,
-            KYCSession.status.notin_([KYCStatus.APPROVED, KYCStatus.REJECTED])
-        )
+        .where(KYCSession.user_id == current_user.id)
         .order_by(KYCSession.created_at.desc())
     )
-    session = result.scalar_one_or_none()
+    session = result.scalars().first()
     
     if not session:
         raise HTTPException(
