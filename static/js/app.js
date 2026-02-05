@@ -328,6 +328,16 @@ function goToStep(step) {
 
     // Start camera for relevant steps
     stopCamera();
+
+    // Skip camera if session is already completed or approved
+    if (currentSession && (currentSession.status === 'approved' || currentSession.status === 'video_completed')) {
+        if (step === 4) {
+            document.getElementById('video-result').classList.remove('hidden');
+            document.getElementById('join-room-btn').classList.add('hidden');
+        }
+        return;
+    }
+
     if (step === 2) {
         startCamera('selfie-video');
     } else if (step === 3) {
