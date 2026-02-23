@@ -4,6 +4,11 @@ from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import os
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 from config import settings
 from database.database import init_db
@@ -27,18 +32,18 @@ async def lifespan(app: FastAPI):
             admin_count = result.scalar()
             
             if admin_count == 0:
-                print("No admin found. Creating default admin...")
+                logger.info("No admin found. Creating default admin...")
                 from create_admin import create_admin
                 await create_admin("admin@gmail.com", "Admin123", "System Admin")
             else:
-                print(f"Admin(s) already exist ({admin_count}). Skipping auto-creation.")
+                logger.info(f"Admin(s) already exist ({admin_count}). Skipping auto-creation.")
     except Exception as e:
-        print(f"Admin check/creation skipped: {e}")
+        logger.error(f"Admin check/creation skipped: {e}")
         
-    print(f"🚀 {settings.APP_NAME} v{settings.APP_VERSION} started")
+    logger.info(f"🚀 {settings.APP_NAME} v{settings.APP_VERSION} started")
     yield
     # Shutdown
-    print("👋 Shutting down...")
+    logger.info("👋 Shutting down...")
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -89,7 +94,7 @@ async def root():
     <!DOCTYPE html>
     <html>
     <head>
-        <title>eKYC Platform</title>
+        <title>vKYC Platform</title>
         <style>
             body { 
                 font-family: system-ui; 
@@ -109,8 +114,8 @@ async def root():
     </head>
     <body>
         <div class="container">
-            <h1>🔐 eKYC Platform</h1>
-            <p>Electronic Know Your Customer Verification System</p>
+            <h1>🔐 vKYC Platform</h1>
+            <p>Video Know Your Customer Verification System</p>
             <p>API Documentation: <a href="/docs">/docs</a></p>
         </div>
     </body>
@@ -128,4 +133,4 @@ async def health_check():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8002)
+    uvicorn.run("main:app", host="0.0.0.0", port=8001)

@@ -4,6 +4,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from database.database import async_session_maker
 from database.models import User
 from routes.auth import get_password_hash
+import logging
+
+logger = logging.getLogger(__name__)
 
 async def create_admin(email: str, password: str, full_name: str):
     async with async_session_maker() as db:
@@ -12,10 +15,10 @@ async def create_admin(email: str, password: str, full_name: str):
         user = result.scalar_one_or_none()
         
         if user:
-            print(f"User {email} already exists. Promoting to admin...")
+            logger.info(f"User {email} already exists. Promoting to admin...")
             user.is_admin = True
         else:
-            print(f"Creating new admin user: {email}")
+            logger.info(f"Creating new admin user: {email}")
             user = User(
                 email=email,
                 hashed_password=get_password_hash(password),
@@ -25,7 +28,7 @@ async def create_admin(email: str, password: str, full_name: str):
             db.add(user)
         
         await db.commit()
-        print(f"Admin user {email} created/updated successfully.")
+        logger.info(f"Admin user {email} created/updated successfully.")
 
 if __name__ == "__main__":
     email = "agent@gmail.com"

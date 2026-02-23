@@ -8,7 +8,9 @@ try:
     from mediapipe.python.solutions import face_mesh as mp_face_mesh
     MEDIAPIPE_AVAILABLE = True
 except Exception as e:
-    print(f"Mediapipe initialization failed: {e}")
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.warning(f"Mediapipe initialization failed: {e}")
     MEDIAPIPE_AVAILABLE = False
 
 class LivenessService:

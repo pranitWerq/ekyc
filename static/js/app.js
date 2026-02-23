@@ -291,7 +291,7 @@ async function loadKYCStatus() {
             </div>
         `;
     } catch (error) {
-        container.innerHTML = `<p class="text-muted">No active KYC session found. <a href="#" onclick="showSection('verification')">Start verification</a></p>`;
+        container.innerHTML = `<p class="text-muted">No active vKYC session found. <a href="#" onclick="showSection('verification')">Start verification</a></p>`;
     }
 }
 
@@ -562,18 +562,14 @@ function updateLivenessProgress(result) {
 // ===== Video Call =====
 async function joinVideoRoom(silent = false) {
     try {
-        console.log('Starting joinVideoRoom...');
-
         // First, make API call to get room credentials
         const result = await api('/video/room', { method: 'POST' });
-        console.log('Video room API response:', result);
 
         document.getElementById('video-status').textContent = 'Connecting...';
         document.getElementById('video-status').className = 'badge badge-info';
 
         // Check if LiveKit SDK is loaded
         if (typeof LivekitClient === 'undefined' && typeof LiveKit === 'undefined') {
-            console.warn('LiveKit SDK not loaded, falling back to local camera only');
             document.getElementById('video-status').textContent = 'Waiting for Agent (Local Mode)';
             document.getElementById('video-status').className = 'badge badge-pending';
             await startCamera('local-video');
@@ -650,7 +646,7 @@ async function joinVideoRoom(silent = false) {
         await livekitRoom.connect(livekitUrl, result.token);
         console.log('Connected to LiveKit room:', result.room_name);
 
-        // Enable camera and microphone
+        // Enable camera and microphone FIRST
         await livekitRoom.localParticipant.enableCameraAndMicrophone();
         console.log('Camera and microphone enabled');
 
@@ -659,6 +655,16 @@ async function joinVideoRoom(silent = false) {
         if (localVideoTrack && localVideoTrack.track) {
             localVideoTrack.track.attach(document.getElementById('local-video'));
             console.log('Local video attached');
+        }
+
+        // NOW start transcription AFTER LiveKit mic is active
+        // Use LiveKit's mic track so we don't conflict with getUserMedia
+        const session = await api('/kyc/sessions/current');
+        if (session && session.id) {
+            // Get the MediaStream from LiveKit's microphone track
+            const micPub = livekitRoom.localParticipant.getTrackPublication(LK.Track.Source.Microphone);
+            const livekitMicStream = micPub && micPub.track ? micPub.track.mediaStream : null;
+            startGlobalTranscription(session.id, livekitMicStream);
         }
 
         document.getElementById('video-status').textContent = 'Waiting for Agent';
@@ -670,12 +676,6 @@ async function joinVideoRoom(silent = false) {
 
         if (!silent) {
             console.log('Successfully joined video room!');
-        }
-
-        // Start transcription
-        const session = await api('/kyc/sessions/current');
-        if (session && session.id) {
-            startGlobalTranscription(session.id);
         }
 
     } catch (error) {
@@ -912,6 +912,8 @@ async function joinAgentCall(sessionId) {
             document.getElementById('video-status').textContent = 'Connected as Agent (Local Mode)';
             document.getElementById('video-status').className = 'badge badge-success';
             await startCamera('local-video');
+            // Start transcription even without LiveKit
+            startGlobalTranscription(sessionId, null);
             document.getElementById('join-room-btn').classList.add('hidden');
             document.getElementById('end-call-btn').classList.remove('hidden');
             return;
@@ -941,7 +943,7 @@ async function joinAgentCall(sessionId) {
                 track.attach(remoteEl);
             } else if (track.kind === 'audio') {
                 const audioEl = document.createElement('audio');
-                audioEl.id = 'remote-audio-agent-' + participant.identity;
+                audioEl.id = 'remote-audio-' + participant.identity;
                 track.attach(audioEl);
                 document.body.appendChild(audioEl);
             }
@@ -979,7 +981,7 @@ async function joinAgentCall(sessionId) {
         await livekitRoom.connect(livekitUrl, result.token);
         console.log('Agent connected to LiveKit room:', result.room_name);
 
-        // Enable camera and microphone
+        // Enable camera and microphone FIRST
         await livekitRoom.localParticipant.enableCameraAndMicrophone();
         console.log('Agent: Camera and microphone enabled');
 
@@ -990,6 +992,11 @@ async function joinAgentCall(sessionId) {
             console.log('Agent: Local video attached');
         }
 
+        // NOW start transcription AFTER LiveKit mic is active
+        const micPub = livekitRoom.localParticipant.getTrackPublication(LK.Track.Source.Microphone);
+        const livekitMicStream = micPub && micPub.track ? micPub.track.mediaStream : null;
+        startGlobalTranscription(sessionId, livekitMicStream);
+
         document.getElementById('video-status').textContent = 'Connected as Agent';
         document.getElementById('video-status').className = 'badge badge-success';
 
@@ -997,9 +1004,6 @@ async function joinAgentCall(sessionId) {
         document.getElementById('end-call-btn').classList.remove('hidden');
 
         console.log('Agent successfully joined video room!');
-
-        // Start transcription
-        startGlobalTranscription(sessionId);
 
     } catch (error) {
         console.error('Agent join error:', error);
@@ -1029,48 +1033,59 @@ let transcriptionSocket = null;
 let recognition = null;
 let isTranscribing = false;
 let currentTranscriptSessionId = null;
+let audioCtx = null;
+let audioProcessor = null;
+let micStream = null;
 
-async function startGlobalTranscription(sessionId) {
+async function startGlobalTranscription(sessionId, existingMicStream) {
     if (isTranscribing) return;
 
     currentTranscriptSessionId = sessionId;
     const panel = document.getElementById('transcription-panel');
     panel.classList.remove('hidden');
 
-    // 1. Connect WebSocket
+    // 1. Connect WebSocket with role info and sample rate
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/transcription/ws/${sessionId}`;
+    const role = isAgentMode ? 'agent' : 'user';
+
+    // Create temporary context to get native sample rate
+    const tempCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const sampleRate = tempCtx.sampleRate;
+    tempCtx.close();
+
+    const wsUrl = `${protocol}//${window.location.host}/video/ws/${sessionId}?role=${role}&sample_rate=${sampleRate}`;
+    console.log(`[Transcription] Connecting as ${role}, rate=${sampleRate}, existingMic=${!!existingMicStream}`);
 
     try {
         transcriptionSocket = new WebSocket(wsUrl);
 
         transcriptionSocket.onopen = () => {
-            console.log('Transcription WebSocket connected');
             isTranscribing = true;
-            startSpeechRecognition();
+            console.log(`[Transcription] WebSocket connected for ${role}`);
+            // Start audio streaming, reuse existing mic stream if available
+            startAudioStreaming(existingMicStream);
         };
 
         transcriptionSocket.onmessage = (event) => {
             const data = JSON.parse(event.data);
             if (data.type === 'transcript') {
                 appendTranscript(data);
-            } else if (data.type === 'status') {
-                console.log('Transcription status:', data.message);
             }
         };
 
         transcriptionSocket.onerror = (error) => {
-            console.error('Transcription WebSocket error:', error);
+            console.error('[Transcription] WebSocket error:', error);
         };
 
         transcriptionSocket.onclose = () => {
-            console.log('Transcription WebSocket closed');
+            console.log('[Transcription] WebSocket closed');
             isTranscribing = false;
             stopSpeechRecognition();
+            stopAudioStreaming();
         };
 
     } catch (error) {
-        console.error('Failed to connect transcription socket:', error);
+        console.error('[Transcription] Failed to connect:', error);
     }
 }
 
@@ -1080,14 +1095,97 @@ function stopGlobalTranscription() {
         transcriptionSocket = null;
     }
     stopSpeechRecognition();
+    stopAudioStreaming();
     isTranscribing = false;
     currentTranscriptSessionId = null;
     document.getElementById('transcription-panel').classList.add('hidden');
 }
 
+async function startAudioStreaming(existingMicStream) {
+    if (!isTranscribing) return;
+
+    try {
+        // Reuse existing mic stream (from LiveKit) or get a new one
+        if (existingMicStream) {
+            micStream = existingMicStream;
+            console.log('[Audio] Using existing LiveKit mic stream');
+        } else {
+            // Fallback: request a new mic stream
+            const constraints = {
+                audio: {
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    autoGainControl: true
+                }
+            };
+            micStream = await navigator.mediaDevices.getUserMedia(constraints);
+            console.log('[Audio] Got new mic stream via getUserMedia');
+        }
+
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === 'suspended') {
+            await audioCtx.resume();
+        }
+        const source = audioCtx.createMediaStreamSource(micStream);
+
+        // Use 2048 buffer size for lower latency (~42ms at 48kHz)
+        audioProcessor = audioCtx.createScriptProcessor(2048, 1, 1);
+
+        let chunksSent = 0;
+        audioProcessor.onaudioprocess = (event) => {
+            if (!transcriptionSocket || transcriptionSocket.readyState !== WebSocket.OPEN) return;
+
+            const inputData = event.inputBuffer.getChannelData(0);
+
+            // Noise gate REMOVED: Send all audio to backend.
+            // Sarvam VAD handles silence better than this simple RMS check.
+            // This fixes the "delayed/missing" user transcription issue.
+
+            // Convert Float32Array to Int16Array (16-bit PCM)
+
+            // Convert Float32Array to Int16Array (16-bit PCM)
+            const int16Data = new Int16Array(inputData.length);
+            for (let i = 0; i < inputData.length; i++) {
+                const s = Math.max(-1, Math.min(1, inputData[i]));
+                int16Data[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+            }
+
+            transcriptionSocket.send(int16Data.buffer);
+            chunksSent++;
+            if (chunksSent === 1) {
+                console.log(`[Audio] First chunk sent (${int16Data.buffer.byteLength} bytes)`);
+            } else if (chunksSent % 200 === 0) {
+                console.log(`[Audio] Sent ${chunksSent} chunks`);
+            }
+        };
+
+        source.connect(audioProcessor);
+        audioProcessor.connect(audioCtx.destination);
+        console.log('[Audio] Streaming started to backend (Sarvam)');
+    } catch (error) {
+        console.error('[Audio] Error starting audio streaming:', error);
+        // Fallback to browser speech recognition
+        startSpeechRecognition();
+    }
+}
+
+function stopAudioStreaming() {
+    if (audioProcessor) {
+        audioProcessor.disconnect();
+        audioProcessor = null;
+    }
+    if (audioCtx) {
+        audioCtx.close();
+        audioCtx = null;
+    }
+    if (micStream) {
+        micStream.getTracks().forEach(track => track.stop());
+        micStream = null;
+    }
+}
+
 function startSpeechRecognition() {
     if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-        console.warn('Speech recognition not supported in this browser');
         return;
     }
 
@@ -1137,7 +1235,6 @@ function startSpeechRecognition() {
 
     try {
         recognition.start();
-        console.log('Speech recognition started');
     } catch (error) {
         console.error('Failed to start speech recognition:', error);
     }
@@ -1155,28 +1252,66 @@ function appendTranscript(data) {
     const placeholder = content.querySelector('.transcript-placeholder');
     if (placeholder) placeholder.remove();
 
-    const msgDiv = document.createElement('div');
-    msgDiv.className = 'transcript-message';
+    const isAgent = data.speaker && data.speaker.toLowerCase() === 'agent';
+    const speakerClass = isAgent ? 'speaker-agent' : 'speaker-user';
+    const speakerLabel = isAgent ? 'Agent' : 'User';
+    // Use simple keys 'agent' or 'user' for partial tracking
+    const speakerKey = isAgent ? 'agent' : 'user';
 
-    const timestamp = new Date(data.timestamp).toLocaleTimeString([], { hour12: false });
-    const speakerClass = data.speaker === 'agent' ? 'speaker-agent' : 'speaker-user';
-    const speakerLabel = data.speaker === 'agent' ? 'Agent' : 'User';
-
-    // Check if translated text exists and is different from original
+    // Determine display text
     const hasTranslation = data.translated_text && data.translated_text !== data.original_text;
-    const displayText = hasTranslation ? data.translated_text : data.original_text;
+    const displayText = hasTranslation ? data.translated_text : (data.original_text || data.translated_text || '');
     const originalText = hasTranslation ? `<span class="transcript-original">${data.original_text}</span>` : '';
     const langInfo = data.source_language && data.source_language !== 'en' && data.source_language !== 'auto' ? ` (${data.source_language})` : '';
+    const timestamp = new Date(data.timestamp || Date.now()).toLocaleTimeString([], { hour12: false });
 
-    msgDiv.innerHTML = `
+    // HTML Content
+    const innerHTML = `
         <span class="transcript-timestamp">[${timestamp}]</span>
         <span class="transcript-speaker ${speakerClass}">${speakerLabel}${langInfo}:</span>
-        <span class="transcript-text">${displayText}</span>
+        <span class="transcript-text" style="${data.is_final ? '' : 'opacity:0.7'}">${displayText}${data.is_final ? '' : '...'}</span>
         ${originalText}
     `;
 
-    content.appendChild(msgDiv);
-    content.scrollTop = content.scrollHeight;
+    if (data.is_final) {
+        // FINAL: Remove any active partial for this speaker, then APPEND new final div
+        const partialEl = content.querySelector(`[data-partial-speaker="${speakerKey}"]`);
+        if (partialEl) partialEl.remove();
+
+        // Check if this specific transcript ID already exists (deduplication)
+        let existingEl = null;
+        if (data.id) {
+            existingEl = content.querySelector(`[data-transcript-id="${data.id}"]`);
+        }
+
+        if (existingEl) {
+            // Update existing element (e.g. if translation improved)
+            existingEl.innerHTML = innerHTML;
+        } else {
+            // Create NEW final div
+            const msgDiv = document.createElement('div');
+            msgDiv.className = 'transcript-message';
+            if (data.id) msgDiv.setAttribute('data-transcript-id', data.id);
+            msgDiv.innerHTML = innerHTML;
+            content.appendChild(msgDiv);
+        }
+    } else {
+        // PARTIAL: Update existing partial element OR create new one
+        let partialEl = content.querySelector(`[data-partial-speaker="${speakerKey}"]`);
+        if (!partialEl) {
+            partialEl = document.createElement('div');
+            partialEl.className = 'transcript-message transcript-partial';
+            partialEl.setAttribute('data-partial-speaker', speakerKey);
+            content.appendChild(partialEl);
+        }
+        partialEl.innerHTML = innerHTML;
+    }
+
+    // Always scroll to bottom
+    const shouldScroll = content.scrollTop + content.clientHeight >= content.scrollHeight - 50;
+    if (shouldScroll || data.is_final) {
+        content.scrollTop = content.scrollHeight;
+    }
 }
 
 async function downloadTranscript() {

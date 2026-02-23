@@ -1,6 +1,9 @@
 from typing import Optional
 import time
 from datetime import timedelta
+import logging
+
+logger = logging.getLogger(__name__)
 
 try:
     from livekit import api
@@ -17,8 +20,9 @@ class LiveKitService:
         self.api_key = settings.LIVEKIT_API_KEY
         self.api_secret = settings.LIVEKIT_API_SECRET
         self.livekit_url = settings.LIVEKIT_URL
-        print(f"LiveKit Service initialized - Available: {LIVEKIT_AVAILABLE}")
-        print(f"LiveKit URL: {self.livekit_url}")
+        self.livekit_url = settings.LIVEKIT_URL
+        logger.info(f"LiveKit Service initialized - Available: {LIVEKIT_AVAILABLE}")
+        logger.info(f"LiveKit URL: {self.livekit_url}")
     
     async def create_token(
         self,
@@ -28,7 +32,7 @@ class LiveKitService:
     ) -> str:
         """Generate a LiveKit access token for a participant"""
         if not LIVEKIT_AVAILABLE or not self.api_key or not self.api_secret:
-            print(f"LiveKit not available or credentials missing. Returning mock token.")
+            logger.warning(f"LiveKit not available or credentials missing. Returning mock token.")
             return f"mock_token_{room_name}_{participant_name}_{int(time.time())}"
         
         try:
@@ -54,10 +58,10 @@ class LiveKitService:
             token.with_ttl(timedelta(hours=6))
             
             jwt_token = token.to_jwt()
-            print(f"Generated LiveKit token for {participant_name} in room {room_name}")
+            logger.info(f"Generated LiveKit token for {participant_name} in room {room_name}")
             return jwt_token
         except Exception as e:
-            print(f"Error generating LiveKit token: {e}")
+            logger.error(f"Error generating LiveKit token: {e}")
             # Return a mock token as fallback
             return f"mock_token_{room_name}_{participant_name}_{int(time.time())}"
     

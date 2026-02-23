@@ -7,9 +7,14 @@ __pycache__/
 # Project specific uploads/data
 uploads/documents
 uploads/faces
-
+transcription
+bkp
 venv
 ekyc.db
 docker-compose.yml
 Dockerfile
 V-KYC_Live_Translation_Project_Plan.pdf
+recordings
+fingerprint_test.py
+create_admin.py
+make_admin.py

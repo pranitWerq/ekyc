@@ -35,3 +35,8 @@ asyncpg==0.29.0
 psycopg2-binary==2.9.9
 email-validator==2.1.0.post1
 
+# Multi-language Transcription
+sarvamai
+websockets
+httpx
+

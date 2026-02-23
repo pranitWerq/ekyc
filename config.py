@@ -50,6 +50,9 @@ class Settings(BaseSettings):
     # Face verification threshold
     FACE_MATCH_THRESHOLD: float = 0.6
     
+    # Sarvam AI
+    SARVAM_API_KEY: Optional[str] = None
+    
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
 settings = Settings()

@@ -1,7 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
+from starlette.websockets import WebSocketState
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from datetime import datetime
+import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 from database.database import get_db
 from database.models import User, KYCSession, VideoSession, KYCStatus
@@ -118,18 +123,17 @@ async def end_video_session(
     
     video_session.ended_at = datetime.utcnow()
     video_session.agent_notes = notes
-    
+
     # Simulate saving recording file
     recording_filename = f"recording_{session_id}_{int(video_session.ended_at.timestamp())}.mp4"
     recording_path = f"recordings/{recording_filename}"
     
-    # Create a dummy file to simulate recording
     try:
         with open(recording_path, "w") as f:
             f.write("DUMMY VIDEO DATA - SIMULATED RECORDING")
         video_session.recording_url = f"/recordings/{recording_filename}"
     except Exception as e:
-        print(f"Failed to save simulated recording: {e}")
+        logger.error(f"Failed to save simulated recording: {e}")
 
     # Update KYC session status
     result = await db.execute(
@@ -175,69 +179,95 @@ async def websocket_transcription_endpoint(websocket: WebSocket, session_id: str
     """
     WebSocket endpoint for real-time transcription.
     
-    Roles:
-    - User/Source: Sends audio bytes (or text JSON).
-    - Agent/Viewer: Receives transcript JSON objects.
+    Both user and agent stream audio bytes for Sarvam AI transcription.
+    Transcripts are broadcast to ALL subscribers in real-time.
     
     Query Params:
     - role: 'user' or 'agent' (default: user)
+    - sample_rate: audio sample rate (default: 48000)
     """
     await websocket.accept()
     role = websocket.query_params.get("role", "user")
+    speaker_name = "Agent" if role == "agent" else "User"
     
-    # User metadata for storage
+    # Session metadata
     metadata = {
         "role": role,
         "connected_at": datetime.utcnow().isoformat(),
         "client_ip": websocket.client.host if websocket.client else "unknown"
     }
 
+    # Audio sample rate from query params
     try:
-        # Start/Join transcription session logic
+        input_sample_rate = int(websocket.query_params.get("sample_rate", 48000))
+    except ValueError:
+        input_sample_rate = 48000
+    
+    logger.info(f"[WS] {speaker_name} connected to session {session_id} (rate={input_sample_rate})")
+
+    # Subscriber callback for this websocket
+    async def on_transcript(transcript_data: dict):
+        try:
+            if websocket.client_state == WebSocketState.CONNECTED:
+                await websocket.send_json(transcript_data)
+        except Exception as e:
+            logger.error(f"[WS] Error sending transcript to {speaker_name}: {e}")
+
+    try:
+        # Start/join session
         await transcription_service.start_session(session_id, metadata=metadata)
         
-        # Callback for when new transcripts are generated (broadcast to this socket)
-        async def on_transcript(transcript_data: dict):
-            # Send to websocket
-            await websocket.send_json(transcript_data)
-        
-        # Subscribe this socket to the session
+        # Subscribe to receive transcripts from all speakers
         transcription_service.subscribe(session_id, on_transcript)
         
-        if role == "user":
-            # If user, we expect audio input to stream to AWS
-            # Create a generator that yields bytes from websocket
-            async def audio_generator():
-                try:
-                    while True:
-                        data = await websocket.receive_bytes()
-                        yield data
-                except WebSocketDisconnect:
-                    return
-                except Exception as e:
-                    print(f"Audio stream error: {e}")
-                    return
-
-            # Process the audio stream (blocks until disconnect)
-            await transcription_service.process_audio_stream(
-                session_id=session_id, 
-                audio_generator=audio_generator(),
-                speaker="User"
-            )
-            
-        else:
-            # If agent/viewer, just keep connection open to receive broadcasts
-            # We need to loop receiving to detect disconnect, even if we ignore input
-            while True:
-                await websocket.receive_text() # Wait for message (ping/pong)
+        # Send existing history immediately
+        history = transcription_service.get_transcripts(session_id)
+        if history:
+            logger.info(f"[WS] Sending {len(history)} historical transcripts to {speaker_name}")
+            for entry in history:
+                await websocket.send_json(entry)
+        
+        # Audio generator reads binary audio from this WebSocket
+        async def audio_generator():
+            try:
+                while True:
+                    message = await websocket.receive()
+                    if "bytes" in message:
+                        yield message["bytes"]
+                    elif "text" in message:
+                        # Browser speech API fallback sends JSON text
+                        try:
+                            data = json.loads(message["text"])
+                            if data.get("type") == "transcript":
+                                await transcription_service.add_transcript(
+                                    session_id=session_id,
+                                    speaker=speaker_name,
+                                    text=data.get("text", ""),
+                                    source_language=data.get("language") or "auto",
+                                    is_final=data.get("is_final", True)
+                                )
+                        except Exception as e:
+                            logger.error(f"[WS] Error processing text message: {e}")
+            except WebSocketDisconnect:
+                return
+            except Exception as e:
+                logger.error(f"[WS] Audio generator error ({speaker_name}): {e}")
+                return
+        
+        # Stream audio to Sarvam AI for transcription
+        await transcription_service.process_audio_stream(
+            session_id=session_id, 
+            audio_generator=audio_generator(),
+            speaker=speaker_name,
+            input_sample_rate=input_sample_rate
+        )
 
     except WebSocketDisconnect:
-        print(f"WebSocket disconnected: {session_id} ({role})")
+        logger.info(f"[WS] {speaker_name} disconnected from session {session_id}")
     except Exception as e:
-        print(f"WebSocket error: {e}")
+        logger.error(f"[WS] Error for {speaker_name}: {e}")
     finally:
         transcription_service.unsubscribe(session_id, on_transcript)
+        # Only the user's disconnect triggers session save
         if role == "user":
-             # End session and save file if the main user leaves? 
-             # Or keep it open for a bit? For now, end it.
-             await transcription_service.end_session(session_id)
+            await transcription_service.end_session(session_id)
